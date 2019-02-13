@@ -61,13 +61,8 @@ module SlugHelpers
       slug = slug.prepend("_")
     end
 
-    # if slug is empty at this point, make something up.
-    if slug.empty?
-      slug = SlugHelpers.random_name
-    end
-
     # search for dupes
-    if SlugHelpers.slug_in_use?(slug, klass)
+    if !slug.empty? && SlugHelpers.slug_in_use?(slug, klass)
       slug = SlugHelpers.dedupe_slug(slug, 1, klass)
     end
 
@@ -82,19 +77,20 @@ module SlugHelpers
     elsif !thing[:name].nil? && !thing[:name].empty?
       thing[:slug] = thing[:name]
 
-    else
       # if Agent, go look in the AgentContact table.
-      if thing.class == AgentCorporateEntity ||
+    elsif thing.class == AgentCorporateEntity ||
          thing.class == AgentPerson ||
          thing.class == AgentFamily ||
          thing.class == AgentSoftware
 
         thing[:slug] = SlugHelpers.get_agent_name(thing.id, thing.class)
+        if thing[:slug].empty? || thing[:slug].nil?
+          thing[:is_slug_auto] = 0
+        end
 
-      # otherwise, make something up.
-      else
-        thing[:slug] = SlugHelpers.random_name
-      end
+    # otherwise, set auto off and use the uri.
+    else
+      thing[:is_slug_auto] = 0
     end
   end
 
@@ -133,6 +129,12 @@ module SlugHelpers
     # or here
     elsif thing.class == AgentCorporateEntity || AgentPerson || AgentFamily || AgentSoftware
       thing[:slug] = SlugHelpers.get_agent_name(thing.id, thing.class)
+      if thing[:slug].empty? || thing[:slug].nil?
+        thing[:is_slug_auto] = 0
+      end
+    # otherwise, set auto off and use the uri.
+    else
+      thing[:is_slug_auto] = 0
     end
   end
 
@@ -482,37 +484,32 @@ module SlugHelpers
   end
 
   def self.get_agent_name(id, klass)
+    result = ""
+
+    disp_name = klass.to_jsonmodel(klass.get_or_die(id)).display_name
+
     case klass.to_s
     when "AgentPerson"
-      table = "name_person"
-      lookup_field_prefix = "agent_person"
-      select_field = "primary_name"
+      if disp_name["name_order"] === "inverted"
+        result << disp_name["primary_name"] if disp_name["primary_name"]
+        result << ", #{disp_name["rest_of_name"]}" if disp_name["rest_of_name"]
+      elsif disp_name["name_order"] === "direct"
+        result << disp_name["rest_of_name"] if disp_name["rest_of_name"]
+        result << " #{disp_name["primary_name"]}" if disp_name["primary_name"]
+      else
+        result << disp_name["primary_name"]
+      end
     when "AgentFamily"
-      table = "name_family"
-      lookup_field_prefix = "agent_family"
-      select_field = "family_name"
+      result = disp_name["family_name"] if disp_name["family_name"]
     when "AgentCorporateEntity"
-      table = "name_corporate_entity"
-      lookup_field_prefix = "agent_corporate_entity"
-      select_field = "primary_name"
+      result << "#{disp_name["primary_name"]}" if disp_name["primary_name"]
+      result << ". #{disp_name["subordinate_name_1"]}" if disp_name["subordinate_name_1"]
+      result << ". #{disp_name["subordinate_name_2"]}" if disp_name["subordinate_name_2"]
     when "AgentSoftware"
-      table = "name_software"
-      lookup_field_prefix = "agent_software"
-      select_field = "software_name"
+      result = disp_name["software_name"] if disp_name["software_name"]
     end
 
-    rec = AgentContact.fetch("SELECT #{select_field} FROM #{table} where #{lookup_field_prefix}_id = ?", id).first
-
-    if rec
-      return rec[select_field.to_sym]
-    else
-      return random_name
-    end
+    result
   end
-
-  def self.random_name
-    (0...8).map { (65 + rand(26)).chr }.join
-  end
-
 
 end

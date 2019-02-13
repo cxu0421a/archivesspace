@@ -22,7 +22,7 @@ class Accession < Sequel::Model(:accession)
   include Publishable
   include ReindexTopContainers
   include Assessments::LinkedRecord
-  
+
   agent_role_enum("linked_agent_role")
   agent_relator_enum("linked_agent_archival_record_relators")
 
@@ -59,4 +59,12 @@ class Accession < Sequel::Model(:accession)
 
                   %w(id_0 id_1 id_2 id_3).map{|p| json[p]}.compact.join("-")
                 }
+
+  auto_generate :property => :slug,
+                :generator => proc { |json|
+                  json["title"] if json["title"]
+                },
+                :only_on_create => true,
+                :only_if => proc { |json| json["is_slug_auto"] && AppConfig[:use_human_readable_URLs] }
+
 end
